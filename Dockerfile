@@ -7,7 +7,7 @@ WORKDIR /Deployment
 RUN apt-get update
 
 # Copying the modified jose.py file into the container
-COPY ./dist-packages/jose.py  /usr/local/lib/python3.11/site-packages/
+COPY ./jose.py  /usr/local/lib/python3.11/site-packages/
 
 # Copying the FastAPI application code into the container
 COPY . .
