@@ -2,13 +2,12 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-from jose import jwt, JWTError
-#from jose.exceptions import JWTError
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from firm_case_classifier_api_v8 import process_query
+from Main import flag_check
 import pickle
 import pandas as pd
 import json
@@ -194,7 +193,7 @@ async def case_classifier_endpoint(
     try:
         msg = input_data.msg
         logging.info(f"Received message: {msg}")
-        result = process_query(msg)
+        result = flag_check(msg)
         logging.info(f"Processed result: {result}")
         # print(result)
         return result
@@ -209,5 +208,6 @@ if __name__ == '__main__':
     server.run()
 
 
+# http://127.0.0.1:8000/docs
     
 

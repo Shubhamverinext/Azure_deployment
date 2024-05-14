@@ -1,29 +1,47 @@
 import os
 import openai
 import logging
+from logging.handlers import TimedRotatingFileHandler
 from langchain.chains import RetrievalQA
-from langchain.schema import HumanMessage
-from langchain.chains import LLMChain
 from langchain.vectorstores import FAISS
 from langchain.chat_models import AzureChatOpenAI
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.prompts import PromptTemplate
 import json
 import yaml
-# Configure logging
-logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+import uuid
+import sqlite3
+from Insert_llmdata import data_base
+# Configure logging with a TimedRotatingFileHandler
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[
+        TimedRotatingFileHandler(
+            filename='app.log',
+            when='W0',  # Rotate logs on a weekly basis, starting on Monday
+            backupCount=1  # Retain one backup log file (the current week's log)
+        )
+    ],
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format='%(asctime)s - %(levelname)s - %(message)s')
 
 class caseClassifier:
     def __init__(self):
+        
         logging.info('Initializing caseClassifier...')
         # Load the YAML file
         with open('config.yml', 'r') as yaml_file:
             config = yaml.safe_load(yaml_file)
+
         # Access the configuration values
         self.db_path = config['BaseConfig']['db_path']
         self.OPENAI_API_TYPE = config['BaseConfig']['OPENAI_API_TYPE']
         self.OPENAI_API_KEY = config['BaseConfig']['OPENAI_API_KEY']
-        self.OPENAI_DEPLOYMENT_VERSION  = config['BaseConfig']['OPENAI_DEPLOYMENT_VERSION']
+        self.OPENAI_DEPLOYMENT_VERSION = config['BaseConfig']['OPENAI_DEPLOYMENT_VERSION']
         self.OPENAI_DEPLOYMENT_ENDPOINT = config['BaseConfig']['OPENAI_DEPLOYMENT_ENDPOINT']
         self.OPENAI_DEPLOYMENT_NAME = config['BaseConfig']['OPENAI_DEPLOYMENT_NAME']
         self.OPENAI_MODEL_NAME = config['BaseConfig']['OPENAI_MODEL_NAME']
@@ -42,6 +60,7 @@ class caseClassifier:
         Given the descriptions and matching case types (Primary and Secondary), case ratings, case state and Handling Firm in context.
         Which type of case do you think that the following description "{question}" indicates and what would be the case rating and case state?
         if you think it indicated more than one case type than provide list of all case type you think is applicable.
+        Instruction: In description CL stands for client.Examine the description considering CL as client for answers.
         Select Primary Case Type and Secondary Case Type strictly from below list only, do not make up any other case type:
         Primary Case Types:
             - Employment Law
@@ -147,49 +166,54 @@ class caseClassifier:
     def set_custom_prompt(self, prompt_template):
         prompt = PromptTemplate(template=prompt_template, input_variables=['context', 'question'])
         return prompt
-   
+
     def load_llm(self):
         openai.api_type = "azure"
         openai.api_key = os.getenv("OPENAI_API_KEY")
-        openai.api_version = os.getenv('OPENAI_DEPLOYMENT_VERSION')    
-        llm = AzureChatOpenAI(deployment_name=self.OPENAI_DEPLOYMENT_NAME,
-                    model_name=self.OPENAI_MODEL_NAME,
-                    openai_api_base=self.OPENAI_DEPLOYMENT_ENDPOINT,
-                    openai_api_version=self.OPENAI_DEPLOYMENT_VERSION,
-                    openai_api_key=self.OPENAI_API_KEY,
-                    openai_api_type="azure")
-      
+        openai.api_version = os.getenv('OPENAI_DEPLOYMENT_VERSION')
+        llm = AzureChatOpenAI(
+            deployment_name=self.OPENAI_DEPLOYMENT_NAME,
+            model_name=self.OPENAI_MODEL_NAME,
+            openai_api_base=self.OPENAI_DEPLOYMENT_ENDPOINT,
+            openai_api_version=self.OPENAI_DEPLOYMENT_VERSION,
+            openai_api_key=self.OPENAI_API_KEY,
+            openai_api_type="azure"
+            )
         return llm
-   
+    
     def qa_bot(self, prompt):
-        embeddings = OpenAIEmbeddings(deployment=self.OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME,
-                                      model = self.OPENAI_ADA_EMBEDDING_MODEL_NAME,
-                                      openai_api_base = self.OPENAI_DEPLOYMENT_ENDPOINT,
-                                      openai_api_type = "azure",
-                                      model_kwargs = {'deployment_id': self.OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME},
-                                      chunk_size = 1,)
+        embeddings = OpenAIEmbeddings(
+            deployment=self.OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME,
+            model=self.OPENAI_ADA_EMBEDDING_MODEL_NAME,
+            openai_api_base=self.OPENAI_DEPLOYMENT_ENDPOINT,
+            openai_api_type="azure",
+            model_kwargs={
+                'deployment_id': self.OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME},
+            chunk_size=1,)
         db = FAISS.load_local(self.db_path, embeddings)
         llm = self.load_llm()
         qa_chain = self.retrieval_qa_chain(llm, prompt, db)
         return qa_chain
-       
+
     def hf_bot(self, prompt_hf):
         llm = self.load_llm()
         predictions = llm.predict(prompt_hf)
         return predictions
+    
     @staticmethod
     def retrieval_qa_chain(llm, prompt, db):
-        qa_chain = RetrievalQA.from_chain_type(llm=llm,
-                                              chain_type='stuff',
-                                              retriever=db.as_retriever(search_kwargs={'k': 10}),
-                                              return_source_documents=True,
-                                              chain_type_kwargs={'prompt': prompt}
-                                            )
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type='stuff',
+            retriever=db.as_retriever(search_kwargs={'k': 10}),
+            return_source_documents=True,
+            chain_type_kwargs={'prompt': prompt}
+            )
         return qa_chain
-    
+   
     def final_result(self, query):
         try:
-            #logging.info('Generating final result for query: %s', query)
+            logging.info('Generating final result for query: %s', query)
             qa_result = self.qa_bot(self.qa_prompt)
             response = qa_result({'query': query})
             return response["result"]
@@ -207,8 +231,7 @@ class caseClassifier:
             }
             '''
             return (response)
-        
-       
+
     def get_hadling_firm(self, query, qa_result):
         """
         Retrieves the handling firm recommendation based on the given query and QA result.
@@ -225,7 +248,7 @@ class caseClassifier:
         secondary_case_type = qa_result.get("SecondaryCaseType")
         case_ratings = qa_result.get("CaseRating")
         case_state = qa_result.get("Case State")
-        
+       
         # Prepare the path to the firm rules JSON file
         path = "firm_rules.json"
         
@@ -239,7 +262,7 @@ class caseClassifier:
                     case_state = state_parts[1]
             else:
                 case_state = case_state
-            
+           
             # Load firm rules from JSON file
             with open(path, 'r') as f:
                 data = json.load(f)
@@ -252,7 +275,7 @@ class caseClassifier:
                 # Generate the handling firm prompt template based on rules
                 for rule in state_rules:
                     self.hf_prompt_template += f"  - If the case rating is '{rule['condition']['case_rating']}' and case type is '{rule['condition']['case_type']}', {rule['action']}\n"
-                
+               
                 # Format the handling firm prompt with case details
                 hf_prompt = self.hf_prompt_template.format(
                     case_state=case_state,
@@ -261,7 +284,6 @@ class caseClassifier:
                     Secondary=secondary_case_type,
                     question=query
                 )
-                
                 # Get the handling firm recommendation
                 hf_result = self.hf_bot(hf_prompt)
             else:
@@ -269,18 +291,16 @@ class caseClassifier:
                 qa_result["Case State"] = "Unknown"
                 hf_result = '''
                 {
-                    "Handling Firm" : "SAD" 
+                    "Handling Firm" : "SAD"
                 }
                 '''
-            
             return hf_result
-            
         except IOError as e:
             # Log an error if there is an issue reading the firm rules file
             logging.error('An error occurred while reading firm rules file: %s', e)
             hf_result = '''
             {
-                "Handling Firm" : "SAD" 
+                "Handling Firm" : "SAD"
             }
             '''
             return hf_result
@@ -296,17 +316,21 @@ class caseClassifierApp:
     def hf_send(self, msg, qa_result):
         result = self.case_classifier.get_hadling_firm(msg, qa_result)
         return result
+      
 def process_query(query):
+    # Initialize dictionaries to store results
     qa_result = {}
     final_result = {}
+    # Initialize case classifier and application
     case_classifier = caseClassifier()
     app = caseClassifierApp(case_classifier)
+    generated_uuid = uuid.uuid4()
+    # Send query to the application and handle response
     response = app.send(query)
     try:
         qa_result = json.loads(response)
     except Exception as error:
         logging.exception("Exception occurred in process_query: %s", error)
-        #print("Exception (process_query) : ", error)
         final_result = '''
         {
             "PrimaryCaseType": " ",
@@ -316,7 +340,8 @@ def process_query(query):
             "Is Workers Compensation (Yes/No)?": " ",
             "Confidence(%)": " ",
             "Explanation": "There is some error occured while answering your question, Please try with same case description again.  Sorry for an inconvenience Caused",
-            "Handling Firm" : "Unknown" 
+            "Handling Firm" : "Unknown"
+            "CaseId" : " "
         }
         '''
         return final_result
@@ -325,23 +350,26 @@ def process_query(query):
         firm_response = json.loads(hf_response)
         qa_result["Handling Firm"] = firm_response["Handling Firm"]
         qa_result["Explanation"] = qa_result["Explanation"] + "\n\n" + firm_response["Assignment Explanation"]
+        qa_result["CaseId"] = str(generated_uuid)
         final_result = json.dumps(qa_result)
-
     except Exception as error:
         logging.error('An error occurred while processing handling firm response: %s', error)
         qa_result["Handling Firm"] = "SAD"
+        qa_result["CaseId"] = str(generated_uuid)
         final_result = json.dumps(qa_result)
-    #logging.info('Final result generated: %s', final_result)
+
+    logging.info('Final result generated: %s', final_result)
+    #print("qa_result:", qa_result)
+    data_base(qa_result, query)
     return final_result
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    while True:
-        #print("\n\nPlease enter incorrect address here or  type 'q' to quit\n")
-        logging.info("Please enter incorrect address here or type 'q' to quit")
-        query = input('you: ')
-        if query == 'q':
-            break
-        elif query.strip() == "":
-            continue
-        process_query(query)
+#     while True:
+#         logging.info("Please enter incorrect address here or type 'q' to quit")
+#         query = input('you: ')
+#         if query == 'q':
+#             break
+#         elif query.strip() == "":
+#             continue
+#         process_query(query)
