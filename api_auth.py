@@ -16,6 +16,9 @@ from logging.handlers import TimedRotatingFileHandler
 import yaml
 from uvicorn import Config, Server
 from pydantic import BaseModel
+#from azure.identity import DefaultAzureCredential
+from azure.identity import AzureCliCredential
+from azure.keyvault.secrets import SecretClient
 
 #logging.basicConfig(filename='auth_api.log', level=logging.INFO)
 # Configure logging with a TimedRotatingFileHandler
@@ -46,17 +49,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Key Vault URL
+key_vault_url = "https://caseratekeyvault.vault.azure.net/"
+credential = AzureCliCredential()
+# Create a SecretClient using the Key Vault URL and credential
+client = SecretClient(vault_url=key_vault_url, credential=credential)
 
-# SECRET_KEY = "83daa0256a2289b0fb23693bf1f6034d44396675749244721a2b20e896e11662"
-# ALGORITHM = "HS256"
-# ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-# Load the YAML file
-with open('config.yml', 'r') as file:
-    config = yaml.safe_load(file)
-SECRET_KEY = config['AuthConfig']['SECRET_KEY']
-ALGORITHM = config['AuthConfig']['ALGORITHM']
-ACCESS_TOKEN_EXPIRE_MINUTES = config['AuthConfig']['ACCESS_TOKEN_EXPIRE_MINUTES']
+SECRET_KEY = client.get_secret("pl-secretkey-jwt").value
+ALGORITHM = client.get_secret("pl-algorithm-jwt").value
+ACCESS_TOKEN_EXPIRE_MINUTES = client.get_secret("pl-accesstoken-exp-min").value
 
 db = {
     "admin": {

@@ -1408,13 +1408,6 @@
           "case_rating": "Tier 1-4"
         },
         "action": "Assign handling firm 'Keches Law Group'"
-      },
-      {
-        "condition": {
-          "case_state": "New Hampshire",
-          "case_rating": "Morgan and Morgan"
-        },
-        "action": "Assign handling firm Morgan and Morgan"
       }
     ],
     "New Jersey": [

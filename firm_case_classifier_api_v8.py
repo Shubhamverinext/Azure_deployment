@@ -1,17 +1,20 @@
 import os
 import openai
 import logging
+import json
+import yaml
+import uuid
+import sqlite3
 from logging.handlers import TimedRotatingFileHandler
 from langchain.chains import RetrievalQA
 from langchain.vectorstores import FAISS
 from langchain.chat_models import AzureChatOpenAI
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.prompts import PromptTemplate
-import json
-import yaml
-import uuid
-import sqlite3
+from azure.identity import AzureCliCredential
+from azure.keyvault.secrets import SecretClient
 from Insert_llmdata import data_base
+
 # Configure logging with a TimedRotatingFileHandler
 logging.basicConfig(
     level=logging.INFO,
@@ -25,28 +28,27 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format='%(asctime)s - %(levelname)s - %(message)s')
-
 class caseClassifier:
     def __init__(self):
-        
-        logging.info('Initializing caseClassifier...')
-        # Load the YAML file
-        with open('config.yml', 'r') as yaml_file:
-            config = yaml.safe_load(yaml_file)
 
-        # Access the configuration values
-        self.db_path = config['BaseConfig']['db_path']
-        self.OPENAI_API_TYPE = config['BaseConfig']['OPENAI_API_TYPE']
-        self.OPENAI_API_KEY = config['BaseConfig']['OPENAI_API_KEY']
-        self.OPENAI_DEPLOYMENT_VERSION = config['BaseConfig']['OPENAI_DEPLOYMENT_VERSION']
-        self.OPENAI_DEPLOYMENT_ENDPOINT = config['BaseConfig']['OPENAI_DEPLOYMENT_ENDPOINT']
-        self.OPENAI_DEPLOYMENT_NAME = config['BaseConfig']['OPENAI_DEPLOYMENT_NAME']
-        self.OPENAI_MODEL_NAME = config['BaseConfig']['OPENAI_MODEL_NAME']
-        self.OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME = config['BaseConfig']['OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME']
-        self.OPENAI_ADA_EMBEDDING_MODEL_NAME = config['BaseConfig']['OPENAI_ADA_EMBEDDING_MODEL_NAME']
+        logging.info('Initializing caseClassifier...')
+
+        # Key Vault URL
+        key_vault_url = "https://caseratekeyvault.vault.azure.net/"
+        # DefaultAzureCredential will handle authentication for managed identity, Azure CLI, and environment variables.
+        credential = AzureCliCredential()
+        # Create a SecretClient using the Key Vault URL and credential
+        client = SecretClient(vault_url=key_vault_url, credential=credential)
+
+        self.db_path = client.get_secret("pl-db-path").value
+        self.OPENAI_API_TYPE = client.get_secret("pl-azure-api-type").value
+        self.OPENAI_API_KEY = client.get_secret("pl-open-api-key").value
+        self.OPENAI_DEPLOYMENT_VERSION = client.get_secret("pl-openai-deployment-version").value
+        self.OPENAI_DEPLOYMENT_ENDPOINT = client.get_secret("pl-openai-deployment-endpoint").value
+        self.OPENAI_DEPLOYMENT_NAME = client.get_secret("pl-openai-deployment-name").value
+        self.OPENAI_MODEL_NAME = client.get_secret("pl-openai-model").value
+        self.OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME = client.get_secret("pl-openai-ada-enbedding-deployment").value
+        self.OPENAI_ADA_EMBEDDING_MODEL_NAME = client.get_secret("pl-openai-ada-embedding-model-name").value
 
         os.environ["OPENAI_API_KEY"] = self.OPENAI_API_KEY
         os.environ["OPENAI_DEPLOYMENT_ENDPOINT"] = self.OPENAI_DEPLOYMENT_ENDPOINT
@@ -55,6 +57,7 @@ class caseClassifier:
         os.environ["OPENAI_DEPLOYMENT_VERSION"] = self.OPENAI_DEPLOYMENT_VERSION 
         os.environ["OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME"] = self.OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME
         os.environ["OPENAI_ADA_EMBEDDING_MODEL_NAME"] = self.OPENAI_ADA_EMBEDDING_MODEL_NAME
+
         self.custom_prompt_template = """
         {context}
         Given the descriptions and matching case types (Primary and Secondary), case ratings, case state and Handling Firm in context.
@@ -146,7 +149,8 @@ class caseClassifier:
         "Is Workers Compensation (Yes/No)?" : " 'Yes', If incident happed at client's workplace, else 'No' "
         "Confidence(%)" : "Confidence in %",
         "Explanation" : "Explain your answer here with detail reason behind case state why?"
-        """ 
+        """
+
         self.hf_prompt_template = """
         Given the all the details about case in {case_state},case rating is {case_ratings} ,case types {Primary} and {Secondary}.
         Considering Handling Firm  Rules which Handling firms is most suitable for the given description: "{question}" ?
@@ -161,6 +165,7 @@ class caseClassifier:
         Handling Firm Rules:
         For the state, the handling rules are as follows:
         """
+
         self.qa_prompt = self.set_custom_prompt(self.custom_prompt_template)
    
     def set_custom_prompt(self, prompt_template):
@@ -233,6 +238,7 @@ class caseClassifier:
             return (response)
 
     def get_hadling_firm(self, query, qa_result):
+        
         """
         Retrieves the handling firm recommendation based on the given query and QA result.
         Args:
@@ -248,10 +254,8 @@ class caseClassifier:
         secondary_case_type = qa_result.get("SecondaryCaseType")
         case_ratings = qa_result.get("CaseRating")
         case_state = qa_result.get("Case State")
-       
         # Prepare the path to the firm rules JSON file
         path = "firm_rules.json"
-        
         try:
             # Extract the state abbreviation from the case state
             if " " in case_state:
@@ -262,7 +266,7 @@ class caseClassifier:
                     case_state = state_parts[1]
             else:
                 case_state = case_state
-           
+
             # Load firm rules from JSON file
             with open(path, 'r') as f:
                 data = json.load(f)
@@ -273,19 +277,30 @@ class caseClassifier:
                 state_rules = data["rules"][case_state]
                 
                 # Generate the handling firm prompt template based on rules
-                for rule in state_rules:
-                    self.hf_prompt_template += f"  - If the case rating is '{rule['condition']['case_rating']}' and case type is '{rule['condition']['case_type']}', {rule['action']}\n"
-               
-                # Format the handling firm prompt with case details
-                hf_prompt = self.hf_prompt_template.format(
-                    case_state=case_state,
-                    case_ratings=case_ratings,
-                    Primary=primary_case_type,
-                    Secondary=secondary_case_type,
-                    question=query
-                )
-                # Get the handling firm recommendation
-                hf_result = self.hf_bot(hf_prompt)
+                try:
+                    for rule in state_rules:
+                        
+                        self.hf_prompt_template += f"  - If the case rating is '{rule['condition']['case_rating']}' and case type is '{rule['condition']['case_type']}', {rule['action']}\n"
+                
+                    # Format the handling firm prompt with case details
+                    hf_prompt = self.hf_prompt_template.format(
+                        case_state=case_state,
+                        case_ratings=case_ratings,
+                        Primary=primary_case_type,
+                        Secondary=secondary_case_type,
+                        question=query
+                    )
+                    # Get the handling firm recommendation
+                    hf_result = self.hf_bot(hf_prompt)
+                except IOError as e:
+                    # Log an error if there is an issue reading the firm rules file
+                    logging.error('An error occurred while reading firm rules file: %s', e)
+                    hf_result = '''
+                    {
+                        "Handling Firm" : "SAD"
+                    }
+                    '''
+                    return hf_result
             else:
                 # Set case state to unknown if rules are not found
                 qa_result["Case State"] = "Unknown"
@@ -304,7 +319,7 @@ class caseClassifier:
             }
             '''
             return hf_result
-        
+       
 class caseClassifierApp:
     def __init__(self, case_classifier):
         self.case_classifier = case_classifier
@@ -316,7 +331,7 @@ class caseClassifierApp:
     def hf_send(self, msg, qa_result):
         result = self.case_classifier.get_hadling_firm(msg, qa_result)
         return result
-      
+    
 def process_query(query):
     # Initialize dictionaries to store results
     qa_result = {}
@@ -359,7 +374,6 @@ def process_query(query):
         final_result = json.dumps(qa_result)
 
     logging.info('Final result generated: %s', final_result)
-    #print("qa_result:", qa_result)
     data_base(qa_result, query)
     return final_result
 
@@ -372,4 +386,5 @@ def process_query(query):
 #             break
 #         elif query.strip() == "":
 #             continue
-#         process_query(query)
+#         qa_result = process_query(query)
+#         print("qa_result:", qa_result)

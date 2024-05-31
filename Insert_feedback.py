@@ -1,12 +1,27 @@
 import sqlite3
 import json
 import uuid
+import pyodbc
 
 def feedback_table(data, generated_uuid):
     # Insert into Feedback table
     try:
-        conn = sqlite3.connect('Cases.db')
+        # conn = sqlite3.connect('Cases.db')
+        # curr = conn.cursor()
+
+        #Connect to Azure SQL Database
+        conn = pyodbc.connect(
+            'DRIVER={ODBC Driver 17 for SQL Server};'
+            'SERVER=your_server_name.database.windows.net;'
+            'DATABASE=your_database_name;'
+            'UID=your_username;'
+            'PWD=your_password;'
+            'Encrypt=yes;'
+            'TrustServerCertificate=no;'
+            'Connection Timeout=30;'
+        )
         curr = conn.cursor()
+
         client_ID = data["CaseId"]
         FeedbackId = str(generated_uuid)
         primary_case_type = data["PrimaryCaseType"]

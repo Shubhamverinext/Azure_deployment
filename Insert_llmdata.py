@@ -2,12 +2,26 @@ import sqlite3
 import json
 from datetime import date
 import uuid
-
+import pyodbc
 def data_base(data, query):
     try:
-        # Connect to SQLite database
-        conn = sqlite3.connect('Cases.db')
+        # # Connect to SQLite database
+        # conn = sqlite3.connect('Cases.db')
+        # curr = conn.cursor()
+
+        # Connect to Azure SQL Database
+        conn = pyodbc.connect(
+            'DRIVER={ODBC Driver 17 for SQL Server};'
+            'SERVER=your_server_name.database.windows.net;'
+            'DATABASE=your_database_name;'
+            'UID=your_username;'
+            'PWD=your_password;'
+            'Encrypt=yes;'
+            'TrustServerCertificate=no;'
+            'Connection Timeout=30;'
+        )
         curr = conn.cursor()
+
         #Insert into Cases table
         client_ID = data["CaseId"]
         current_date = date.today()
@@ -28,7 +42,7 @@ def data_base(data, query):
         except Exception as error:
             print(error)
         try:
-            Case_State = data["Case State"].split()[-1]
+            
             # fetch and map ID from SecondaryCaseTypes
             curr.execute("SELECT ScondaryCaseTypeId FROM SecondaryCaseTypes WHERE CaseType = ?", (SecondaryCaseType,))
             result = curr.fetchone()
@@ -38,6 +52,7 @@ def data_base(data, query):
             print(error)
         
         try:
+            Case_State = data["Case State"].split()[-1]
             # fetch and map ID from Caserating
             curr.execute("SELECT CaseRatingId FROM Caserating WHERE CastRating = ?", (CaseRating,))
             result = curr.fetchone()
@@ -81,8 +96,8 @@ def data_base(data, query):
     except Exception as error:
         print(error)
         
-if __name__ == "__main__":
-    data = {"PrimaryCaseType": "General Injury", "SecondaryCaseType": "Automobile Accident", "CaseRating": "Tier 2", "Case State": "Unknown", "Is Workers Compensation (Yes/No)?": "No", "Confidence(%)": "85%", "Explanation": "Based on the description provided, the client was in a car accident and sustained injuries to the face, neck, back, and hip. The injuries mentioned fall under the Tier 2 category for General Injury cases involving Automobile Accidents. The case state is provided as 'Unknown' as there is no mention of the state in the description. The case does not involve a workplace incident, therefore the 'Is Workers Compensation' is 'No'. The confidence level is 85% as the case details match the criteria for General Injury and Automobile Accident case types, however, the case state is uncertain due to the lack of information in the description.", "Handling Firm": "SAD"}
-    query = "Mr. Sabir has a concussion and back injury as result of an accident he suffered with Uber. He would like assistance with his auto accident claim."
-    generated_uuid = uuid.uuid4()
-    data_base(data, query, generated_uuid)
+# if __name__ == "__main__":
+#     data = {"PrimaryCaseType": "General Injury", "SecondaryCaseType": "Automobile Accident", "CaseRating": "Tier 2", "Case State": "Unknown", "Is Workers Compensation (Yes/No)?": "No", "Confidence(%)": "85%", "Explanation": "Based on the description provided, the client was in a car accident and sustained injuries to the face, neck, back, and hip. The injuries mentioned fall under the Tier 2 category for General Injury cases involving Automobile Accidents. The case state is provided as 'Unknown' as there is no mention of the state in the description. The case does not involve a workplace incident, therefore the 'Is Workers Compensation' is 'No'. The confidence level is 85% as the case details match the criteria for General Injury and Automobile Accident case types, however, the case state is uncertain due to the lack of information in the description.", "Handling Firm": "SAD"}
+#     query = "Mr. Sabir has a concussion and back injury as result of an accident he suffered with Uber. He would like assistance with his auto accident claim."
+#     generated_uuid = uuid.uuid4()
+#     data_base(data, query, generated_uuid)

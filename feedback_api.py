@@ -15,6 +15,19 @@ import uuid
 from uvicorn import Config, Server
 from pydantic import BaseModel
 from Insert_feedback import feedback_table
+#from azure.identity import DefaultAzureCredential
+from azure.identity import AzureCliCredential
+from azure.keyvault.secrets import SecretClient
+
+# Key Vault URL
+key_vault_url = "https://caseratekeyvault.vault.azure.net/"
+
+# DefaultAzureCredential will handle authentication for managed identity, Azure CLI, and environment variables.
+#credential = DefaultAzureCredential()
+credential = AzureCliCredential()
+
+# Create a SecretClient using the Key Vault URL and credential
+client = SecretClient(vault_url=key_vault_url, credential=credential)
 
 # Creating a FastAPI application instance
 app = FastAPI()
@@ -23,10 +36,9 @@ app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # Secret key and algorithm for JWT token
-SECRET_KEY = "83daa0256a2289b0fb23693bf1f6034d44396675749244721a2b20e896e11662"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
+SECRET_KEY = client.get_secret("pl-secretkey-jwt").value
+ALGORITHM = client.get_secret("pl-algorithm-jwt").value
+ACCESS_TOKEN_EXPIRE_MINUTES = client.get_secret("pl-accesstoken-exp-min").value
 
 #database for storing user information
 db = {
@@ -38,7 +50,6 @@ db = {
         "disabled": False
     }
 }
-
 
 # Define the Token model
 class Token(BaseModel):

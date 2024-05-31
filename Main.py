@@ -5,8 +5,9 @@ from langchain.chat_models import AzureChatOpenAI
 import json
 import yaml
 from firm_case_classifier_api_v8 import process_query
-
-# Configure logging with a TimedRotatingFileHandler
+#from azure.identity import DefaultAzureCredential
+from azure.identity import AzureCliCredential
+from azure.keyvault.secrets import SecretClient
 # Configure logging with a TimedRotatingFileHandler
 logging.basicConfig(
     level=logging.INFO,
@@ -20,19 +21,21 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-
 class caseClassifier:
     def __init__(self):
-        # Load the YAML file
-        with open('config.yml', 'r') as yaml_file:
-            config = yaml.safe_load(yaml_file)
-
-        # Access the configuration values
-        self.OPENAI_API_KEY = config['BaseConfig']['OPENAI_API_KEY']
-        self.OPENAI_DEPLOYMENT_VERSION = config['BaseConfig']['OPENAI_DEPLOYMENT_VERSION']
-        self.OPENAI_DEPLOYMENT_ENDPOINT = config['BaseConfig']['OPENAI_DEPLOYMENT_ENDPOINT']
-        self.OPENAI_DEPLOYMENT_NAME = config['BaseConfig']['OPENAI_DEPLOYMENT_NAME']
-        self.OPENAI_MODEL_NAME = config['BaseConfig']['OPENAI_MODEL_NAME']
+        # Key Vault URL
+        key_vault_url = "https://caseratekeyvault.vault.azure.net/"
+        # DefaultAzureCredential will handle authentication for managed identity, Azure CLI, and environment variables.
+        #credential = DefaultAzureCredential()
+        credential = AzureCliCredential()
+        # Create a SecretClient using the Key Vault URL and credential
+        client = SecretClient(vault_url=key_vault_url, credential=credential)
+        # Retrieve a secret
+        self.OPENAI_API_KEY = client.get_secret("pl-open-api-key").value
+        self.OPENAI_DEPLOYMENT_VERSION = client.get_secret("pl-openai-deployment-version").value
+        self.OPENAI_DEPLOYMENT_ENDPOINT = client.get_secret("pl-openai-deployment-endpoint").value
+        self.OPENAI_DEPLOYMENT_NAME = client.get_secret("pl-openai-deployment-name").value
+        self.OPENAI_MODEL_NAME = client.get_secret("pl-openai-model").value
 
         os.environ["OPENAI_API_KEY"] = self.OPENAI_API_KEY
         os.environ["OPENAI_DEPLOYMENT_ENDPOINT"] = self.OPENAI_DEPLOYMENT_ENDPOINT
@@ -145,5 +148,5 @@ if __name__ == "__main__":
         #response = app.send(query)
         response = flag_check(query)
         logging.info('Final result generated: %s', response)
-        #print("response", response)
+        print("response", response)
         
