@@ -2,66 +2,52 @@ import sqlite3
 import json
 from datetime import date
 import uuid
-#import pyodbc
-#import sqlalchemy as sa
-#from sqlalchemy.orm import sessionmaker
+import pyodbc
+import sqlalchemy as sa
+from sqlalchemy.orm import sessionmaker
+from azure.identity import AzureCliCredential
+from azure.keyvault.secrets import SecretClient
 
-# # Database connection details
-# DATABASE_CONFIG = {
-#     'driver': 'ODBC Driver 18 for SQL Server',
-#     'server': 'mysqlserver-caserate.database.windows.net',
-#     'database': 'caserate',
-#     'username': 'azureuser',
-#     'password': 'sVWxpYdhexM!',
-# }
+# Key Vault URL
+key_vault_url = "https://caseratekeyvault.vault.azure.net/"
+# DefaultAzureCredential will handle authentication for managed identity, Azure CLI, and environment variables.
+credential = AzureCliCredential()
+# Create a SecretClient using the Key Vault URL and credential
+client = SecretClient(vault_url=key_vault_url, credential=credential)
 
-# # Construct the database URL
-# DATABASE_URL = f"mssql+pyodbc://{DATABASE_CONFIG['username']}:{DATABASE_CONFIG['password']}@" \
-#                f"{DATABASE_CONFIG['server']}/{DATABASE_CONFIG['database']}?" \
-#                f"driver={DATABASE_CONFIG['driver']}"
+#Database connection details
+DATABASE_CONFIG = {
+    'driver': client.get_secret("driver").value,
+    'server': client.get_secret("server").value,
+    'database': client.get_secret("database").value,
+    'username': client.get_secret("username").value,
+    'password': client.get_secret("password").value,
+}
+#print(DATABASE_CONFIG['username'],DATABASE_CONFIG['password'],DATABASE_CONFIG['server'],DATABASE_CONFIG['database'],DATABASE_CONFIG['driver'])
+# Construct the database URL
+DATABASE_URL = f"mssql+pyodbc://{DATABASE_CONFIG['username']}:{DATABASE_CONFIG['password']}@" \
+               f"{DATABASE_CONFIG['server']}/{DATABASE_CONFIG['database']}?" \
+               f"driver={DATABASE_CONFIG['driver']}"
 
-# # Create an engine
-# engine = sa.create_engine(
-#     DATABASE_URL,
-#     pool_size=10,           # The size of the pool to be maintained
-#     max_overflow=20,        # Maximum number of connections to allow in overflow
-#     pool_timeout=30,        # Number of seconds to wait for a connection from the pool
-#     pool_recycle=1800,      # Number of seconds a connection can be idle before being recycled
-# )
+# Create an engine
+engine = sa.create_engine(
+    DATABASE_URL,
+    pool_size=10,           # The size of the pool to be maintained
+    max_overflow=20,        # Maximum number of connections to allow in overflow
+    pool_timeout=30,        # Number of seconds to wait for a connection from the pool
+    pool_recycle=1800,      # Number of seconds a connection can be idle before being recycled
+)
 
-# # Create a configured "Session" class
-# Session = sessionmaker(bind=engine)
+# Create a configured "Session" class
+Session = sessionmaker(bind=engine)
 
 def data_base(data, query):
     try:
         # Connect to SQLite database
-        conn = sqlite3.connect('Cases.db')
-        curr = conn.cursor()
+        # conn = sqlite3.connect('Cases.db')
+        # curr = conn.cursor()
         # #Driver={ODBC Driver 18 for SQL Server};Server=tcp:mysqlserver-caserate.database.windows.net,1433;Database=caserate;Uid=azureuser;Pwd={your_password_here};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;
-
-        #curr = Session()
-    #     session = Session()
-    #     tables = session.execute(sa.text("SELECT table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE'")).fetchall()
-        
-    #     if not tables:
-    #         print("The database is empty: No tables found.")
-    #         return True
-        
-    #     # Check if there is any data in the tables
-    #     for table in tables:
-    #         table_name = table[0]
-    #         row_count = session.execute(sa.text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
-    #         if row_count > 0:
-    #             print(f"The database is not empty: Table '{table_name}' contains data.")
-    #             return False
-        
-    #     print("The database is empty: Tables found but no data in them.")
-    #     return True
-    # except Exception as e:
-    #     print(f"An error occurred: {e}")
-    #     return None
-    # finally:
-    #     session.close()
+        curr = Session()
 
         #Insert into Cases table
         client_ID = data["CaseId"]

@@ -279,7 +279,6 @@ class caseClassifier:
                 # Generate the handling firm prompt template based on rules
                 try:
                     for rule in state_rules:
-                        
                         self.hf_prompt_template += f"  - If the case rating is '{rule['condition']['case_rating']}' and case type is '{rule['condition']['case_type']}', {rule['action']}\n"
                 
                     # Format the handling firm prompt with case details
@@ -293,14 +292,14 @@ class caseClassifier:
                     # Get the handling firm recommendation
                     hf_result = self.hf_bot(hf_prompt)
                 except IOError as e:
-                    # Log an error if there is an issue reading the firm rules file
-                    logging.error('An error occurred while reading firm rules file: %s', e)
+                    # Log an error if there is an issue creating handling firm rules prompt
+                    logging.error('An error occurred creating handling firm rules prompt: %s', e)
                     hf_result = '''
                     {
                         "Handling Firm" : "SAD"
                     }
                     '''
-                    return hf_result
+                    #return hf_result
             else:
                 # Set case state to unknown if rules are not found
                 qa_result["Case State"] = "Unknown"

@@ -4,27 +4,44 @@ FROM python:3.11
 
 # Setting the working directory in the container
 WORKDIR /Deployment
-RUN apt-get update
+
+# Update the package list and install system dependencies for pyodbc and Azure CLI
+RUN apt-get update && apt-get install -y \
+    unixodbc-dev \
+    gcc \
+    g++ \
+    libffi-dev \
+    libsasl2-dev \
+    libldap2-dev \
+    build-essential \
+    curl
+
+# Add the Microsoft package signing key to your list of trusted keys
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+
+# Add the Microsoft package repository
+RUN curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | tee /etc/apt/sources.list.d/msprod.list
+
+# Update the package list to include packages from the new repository and install the ODBC driver
+RUN apt-get update && ACCEPT_EULA=Y apt-get install -y msodbcsql18
+
+# Install the Azure CLI
+RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+# Copying the application code into the container
+COPY . .
 
 # Copying the modified jose.py file into the container
-COPY ./jose.py  /usr/local/lib/python3.11/site-packages/
-
-# Copying the FastAPI application code into the container
-COPY . .
-COPY api_auth.py .
+COPY ./jose.py /usr/local/lib/python3.11/site-packages/
 
 # Installing FastAPI, Uvicorn, and any other dependencies
 COPY requirements.txt .
 
-
 RUN pip3 install -r requirements.txt
 RUN pip3 install passlib
-
 
 # Exposing port 8080 to the outside world
 EXPOSE 8080
 
-
-CMD ["python3","api_auth.py"]
-
-
+# Default command to run the application
+CMD ["python3", "api_auth.py"]
