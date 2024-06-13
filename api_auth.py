@@ -2,12 +2,14 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-from jose import JWTError, jwt
+from jose import jwt, JWTError
+#from jose.exceptions import JWTError
 from passlib.context import CryptContext
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from Main import flag_check
+#from firm_case_classifier_api_v8 import process_query
 import pickle
 import pandas as pd
 import json
@@ -16,9 +18,6 @@ from logging.handlers import TimedRotatingFileHandler
 import yaml
 from uvicorn import Config, Server
 from pydantic import BaseModel
-#from azure.identity import DefaultAzureCredential
-from azure.identity import AzureCliCredential
-from azure.keyvault.secrets import SecretClient
 
 #logging.basicConfig(filename='auth_api.log', level=logging.INFO)
 # Configure logging with a TimedRotatingFileHandler
@@ -49,19 +48,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Key Vault URL
-key_vault_url = "https://caseratekeyvault.vault.azure.net/"
-credential = AzureCliCredential()
-# Create a SecretClient using the Key Vault URL and credential
-client = SecretClient(vault_url=key_vault_url, credential=credential)
 
-# SECRET_KEY = client.get_secret("pl-secretkey-jwt").value
-# ALGORITHM = client.get_secret("pl-algorithm-jwt").value
-# ACCESS_TOKEN_EXPIRE_MINUTES = client.get_secret("pl-accesstoken-exp-min").value
+# SECRET_KEY = "83daa0256a2289b0fb23693bf1f6034d44396675749244721a2b20e896e11662"
+# ALGORITHM = "HS256"
+# ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-SECRET_KEY = "83daa0256a2289b0fb23693bf1f6034d44396675749244721a2b20e896e11662"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 100
+# Load the YAML file
+with open('config.yml', 'r') as file:
+    config = yaml.safe_load(file)
+SECRET_KEY = config['AuthConfig']['SECRET_KEY']
+ALGORITHM = config['AuthConfig']['ALGORITHM']
+ACCESS_TOKEN_EXPIRE_MINUTES = config['AuthConfig']['ACCESS_TOKEN_EXPIRE_MINUTES']
 
 db = {
     "admin": {
@@ -198,7 +195,7 @@ async def case_classifier_endpoint(
     try:
         msg = input_data.msg
         logging.info(f"Received message: {msg}")
-        result = flag_check(msg)
+        result= flag_check(msg)
         logging.info(f"Processed result: {result}")
         # print(result)
         return result
@@ -213,6 +210,5 @@ if __name__ == '__main__':
     server.run()
 
 
-# http://127.0.0.1:8000/docs
     
 

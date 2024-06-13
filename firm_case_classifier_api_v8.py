@@ -7,9 +7,12 @@ import uuid
 import sqlite3
 from logging.handlers import TimedRotatingFileHandler
 from langchain.chains import RetrievalQA
-from langchain.vectorstores import FAISS
-from langchain.chat_models import AzureChatOpenAI
-from langchain.embeddings.openai import OpenAIEmbeddings
+#from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
+#from langchain.chat_models import AzureChatOpenAI
+from langchain_openai import AzureChatOpenAI
+from langchain_openai import AzureOpenAIEmbeddings
+#from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.prompts import PromptTemplate
 from azure.identity import AzureCliCredential
 from azure.keyvault.secrets import SecretClient
@@ -152,16 +155,28 @@ class caseClassifier:
         """
 
         self.hf_prompt_template = """
-        Given the all the details about case in {case_state},case rating is {case_ratings} ,case types {Primary} and {Secondary}.
-        Considering Handling Firm  Rules which Handling firms is most suitable for the given description: "{question}" ?
-        Assign handling firm from Handling Firm Rules only,do not make up any other Handling firm.
+        Given all the details about case in {case_state}, where the case rating is {case_ratings} and case types are {Primary} and {Secondary},
+        determine the most suitable handling firm based on the Handling Firm Rules for the given description: "{question}" ?
+
+        Assign handling firm strictly according to the Handling Firm Rules provided. Do not create or suggest any other handling firms outside of these rules.
+
+        Rule Priority:
+
+            1. For each rule, check if both the case type and case tier match the conditions exactly.
+            2. Specific rules that mention a specific case type (e.g., case type is 'Worker Compensation') take precedence over general rules with 'Any' case type.First, check rules that mention a specific case type. If no specific rule matches, then apply general rules with 'Any' case type.
+            3. If a rule specifies a range for the case rating (e.g., 'Tier 1-4'), check if the case rating falls within this range.
+            4. Apply the most specific rule that matches the case rating and case type.
+            5. Assign the Handling Firm strictly based on the given Handling Firm Rules.
+            6. Apply the rules as specified without any modifications.
+            7. Check each rule for both case type and case tier, selecting the exact matching rule if available.
+            8. If no exact matching rule available, return "SAD" and give proper explanation.
+
         If multiple handling firms are applicable, provide a list of all applicable firms.If no firm is available for the state, return "SAD".
+
         The Output should be strictly in JSON format. Do not add any extra text in output and the JSON structure must have the following key values:
             "Handling Firm" : "Recommanded Handling firm from same state for the case and considering the rules given"
             "Assignment Explanation": "Explanation for recommanding handling firm"
-        Assign Handling Firm as per given Handling Firm  Rules for state,select handling firm from Handling Firm  Rules only,do not make up any other Handling firm. 
-        For assigning the firm to any case follow these Handling firm rules ,before assingning firm to given case check all the rules given and than according to the rule assingn the best suitable firm
-        Please note:Remember to consider the tiers individually if they fall within the specified range and apply rules as instructed in Handling Firm Rules. However, if a tier is given individually, follow it as stated without modification.
+
         Handling Firm Rules:
         For the state, the handling rules are as follows:
         """
@@ -176,26 +191,22 @@ class caseClassifier:
         openai.api_type = "azure"
         openai.api_key = os.getenv("OPENAI_API_KEY")
         openai.api_version = os.getenv('OPENAI_DEPLOYMENT_VERSION')
-        llm = AzureChatOpenAI(
-            deployment_name=self.OPENAI_DEPLOYMENT_NAME,
-            model_name=self.OPENAI_MODEL_NAME,
-            openai_api_base=self.OPENAI_DEPLOYMENT_ENDPOINT,
-            openai_api_version=self.OPENAI_DEPLOYMENT_VERSION,
-            openai_api_key=self.OPENAI_API_KEY,
-            openai_api_type="azure"
-            )
+        llm = AzureChatOpenAI(deployment_name=self.OPENAI_DEPLOYMENT_NAME,
+                              model_name=self.OPENAI_MODEL_NAME,
+                              azure_endpoint=self.OPENAI_DEPLOYMENT_ENDPOINT,
+                              openai_api_version=self.OPENAI_DEPLOYMENT_VERSION,
+                              openai_api_key=self.OPENAI_API_KEY,
+                              openai_api_type="azure")
         return llm
     
     def qa_bot(self, prompt):
-        embeddings = OpenAIEmbeddings(
-            deployment=self.OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME,
-            model=self.OPENAI_ADA_EMBEDDING_MODEL_NAME,
-            openai_api_base=self.OPENAI_DEPLOYMENT_ENDPOINT,
-            openai_api_type="azure",
-            model_kwargs={
-                'deployment_id': self.OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME},
-            chunk_size=1,)
-        db = FAISS.load_local(self.db_path, embeddings)
+        embeddings = AzureOpenAIEmbeddings(deployment=self.OPENAI_ADA_EMBEDDING_DEPLOYMENT_NAME,
+                                           model=self.OPENAI_ADA_EMBEDDING_MODEL_NAME,
+                                           azure_endpoint=self.OPENAI_DEPLOYMENT_ENDPOINT,
+                                           openai_api_type="azure",
+                                           chunk_size=1,)
+                                      
+        db = FAISS.load_local(self.db_path, embeddings,allow_dangerous_deserialization=True)
         llm = self.load_llm()
         qa_chain = self.retrieval_qa_chain(llm, prompt, db)
         return qa_chain
@@ -275,12 +286,11 @@ class caseClassifier:
             if case_state in data["rules"]:
                 # Retrieve rules for the given state
                 state_rules = data["rules"][case_state]
-                
+               
                 # Generate the handling firm prompt template based on rules
                 try:
                     for rule in state_rules:
-                        self.hf_prompt_template += f"  - If the case rating is '{rule['condition']['case_rating']}' and case type is '{rule['condition']['case_type']}', {rule['action']}\n"
-                
+                        self.hf_prompt_template += f"  - If the case rating is '{rule['condition']['case_rating']}' and case type is '{rule['condition']['case_type']}', {rule['action']}\n"               
                     # Format the handling firm prompt with case details
                     hf_prompt = self.hf_prompt_template.format(
                         case_state=case_state,
@@ -377,7 +387,6 @@ def process_query(query):
     return final_result
 
 # if __name__ == "__main__":
-
 #     while True:
 #         logging.info("Please enter incorrect address here or type 'q' to quit")
 #         query = input('you: ')
